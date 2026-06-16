@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { Clock, Search } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -40,6 +40,7 @@ const imgByCategory: Record<string, string> = {
 function Services() {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<string>("All");
+  const qc = useQueryClient();
 
   const { data: services } = useQuery({
     queryKey: ["services"],
@@ -48,6 +49,16 @@ function Services() {
       return data ?? [];
     },
   });
+
+  useEffect(() => {
+    const ch = supabase
+      .channel("services-public")
+      .on("postgres_changes", { event: "*", schema: "public", table: "services" }, () => {
+        qc.invalidateQueries({ queryKey: ["services"] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [qc]);
 
   const categories = useMemo(() => ["All", ...Array.from(new Set((services ?? []).map((s) => s.category)))], [services]);
   const filtered = useMemo(() => {
@@ -87,7 +98,7 @@ function Services() {
           {filtered.map((s) => (
             <article key={s.id} className="overflow-hidden rounded-3xl bg-card shadow-soft transition-transform hover:-translate-y-1">
               <div className="aspect-[4/3] overflow-hidden">
-                <img src={imgByCategory[s.category] ?? serviceSpa} alt={s.service_name} loading="lazy" className="h-full w-full object-cover" />
+                <img src={s.image_url ?? imgByCategory[s.category] ?? serviceSpa} alt={s.service_name} loading="lazy" className="h-full w-full object-cover" />
               </div>
               <div className="p-6">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{s.category}</p>

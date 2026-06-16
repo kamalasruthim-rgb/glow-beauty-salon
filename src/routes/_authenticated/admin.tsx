@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarDays, LogOut, MessageSquare, Plus, Scissors } from "lucide-react";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, useIsAdmin } from "@/lib/auth";
@@ -33,6 +33,23 @@ function Admin() {
     queryKey: ["admin-reviews"], enabled: !!isAdmin,
     queryFn: async () => (await supabase.from("reviews").select("*").order("created_at", { ascending: false })).data ?? [],
   });
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    const ch = supabase
+      .channel("admin-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "appointments" }, () => {
+        qc.invalidateQueries({ queryKey: ["admin-appts"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "reviews" }, () => {
+        qc.invalidateQueries({ queryKey: ["admin-reviews"] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "services" }, () => {
+        qc.invalidateQueries({ queryKey: ["admin-services"] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [isAdmin, qc]);
 
   const updateStatus = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
