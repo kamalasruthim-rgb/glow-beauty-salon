@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Star } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -49,6 +49,16 @@ function Testimonials() {
     queryKey: ["reviews"],
     queryFn: async () => (await supabase.from("reviews").select("*").eq("is_published", true).order("created_at", { ascending: false })).data ?? [],
   });
+
+  useEffect(() => {
+    const ch = supabase
+      .channel("reviews-public")
+      .on("postgres_changes", { event: "*", schema: "public", table: "reviews" }, () => {
+        qc.invalidateQueries({ queryKey: ["reviews"] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [qc]);
 
   const [rating, setRating] = useState(5);
   const form = useForm<Form>({ resolver: zodResolver(schema), defaultValues: { rating: 5 } });
