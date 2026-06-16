@@ -1,10 +1,15 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, LogOut, MessageSquare, Scissors } from "lucide-react";
+import { CalendarDays, LogOut, MessageSquare, Plus, Scissors } from "lucide-react";
 import { toast } from "sonner";
+import { useState } from "react";
+import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, useIsAdmin } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   component: Admin,
@@ -45,6 +50,18 @@ function Admin() {
   const togglePublish = useMutation({
     mutationFn: async ({ id, on }: { id: string; on: boolean }) => { const { error } = await supabase.from("reviews").update({ is_published: on }).eq("id", id); if (error) throw error; },
     onSuccess: () => { toast.success("Updated"); qc.invalidateQueries({ queryKey: ["admin-reviews"] }); },
+  });
+
+  const createService = useMutation({
+    mutationFn: async (input: {
+      service_name: string; category: string; description: string;
+      price: number; duration_minutes: number; image_url: string | null;
+    }) => {
+      const { error } = await supabase.from("services").insert(input);
+      if (error) throw error;
+    },
+    onSuccess: () => { toast.success("Service created"); qc.invalidateQueries({ queryKey: ["admin-services"] }); },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const signOut = async () => { await supabase.auth.signOut(); nav({ to: "/auth" }); };
@@ -106,6 +123,7 @@ function Admin() {
       </Section>
 
       <Section title="Services">
+        <NewServiceForm onSubmit={(v) => createService.mutate(v)} pending={createService.isPending} />
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {(services ?? []).map((s) => (
             <div key={s.id} className="rounded-2xl border border-border bg-card p-4">
@@ -155,5 +173,86 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 className="font-display text-2xl">{title}</h2>
       <div className="mt-4">{children}</div>
     </section>
+  );
+}
+
+const serviceSchema = z.object({
+  service_name: z.string().trim().min(2).max(100),
+  category: z.string().trim().min(2).max(50),
+  description: z.string().trim().min(5).max(500),
+  price: z.number().min(0).max(10000),
+  duration_minutes: z.number().int().min(5).max(600),
+  image_url: z.string().trim().url().max(500).optional().or(z.literal("")),
+});
+
+type ServiceInput = {
+  service_name: string; category: string; description: string;
+  price: number; duration_minutes: number; image_url: string | null;
+};
+
+function NewServiceForm({ onSubmit, pending }: { onSubmit: (v: ServiceInput) => void; pending: boolean }) {
+  const [form, setForm] = useState({
+    service_name: "", category: "", description: "",
+    price: "", duration_minutes: "", image_url: "",
+  });
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = serviceSchema.safeParse({
+      service_name: form.service_name,
+      category: form.category,
+      description: form.description,
+      price: Number(form.price),
+      duration_minutes: Number(form.duration_minutes),
+      image_url: form.image_url,
+    });
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? "Invalid input");
+      return;
+    }
+    onSubmit({
+      ...parsed.data,
+      image_url: parsed.data.image_url ? parsed.data.image_url : null,
+    });
+    setForm({ service_name: "", category: "", description: "", price: "", duration_minutes: "", image_url: "" });
+  };
+
+  return (
+    <form onSubmit={submit} className="mb-6 rounded-2xl border border-border bg-card p-5">
+      <h3 className="font-display text-lg">Add new service</h3>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div>
+          <Label htmlFor="svc-name">Service name</Label>
+          <Input id="svc-name" value={form.service_name} onChange={set("service_name")} placeholder="Signature Facial" required />
+        </div>
+        <div>
+          <Label htmlFor="svc-cat">Category</Label>
+          <Input id="svc-cat" value={form.category} onChange={set("category")} placeholder="Facial" required />
+        </div>
+        <div>
+          <Label htmlFor="svc-price">Price ($)</Label>
+          <Input id="svc-price" type="number" min="0" step="1" value={form.price} onChange={set("price")} required />
+        </div>
+        <div>
+          <Label htmlFor="svc-dur">Duration (minutes)</Label>
+          <Input id="svc-dur" type="number" min="5" step="5" value={form.duration_minutes} onChange={set("duration_minutes")} required />
+        </div>
+        <div className="sm:col-span-2">
+          <Label htmlFor="svc-img">Image URL (optional)</Label>
+          <Input id="svc-img" type="url" value={form.image_url} onChange={set("image_url")} placeholder="https://…" />
+        </div>
+        <div className="sm:col-span-2">
+          <Label htmlFor="svc-desc">Description</Label>
+          <Textarea id="svc-desc" value={form.description} onChange={set("description")} rows={3} required />
+        </div>
+      </div>
+      <div className="mt-4 flex justify-end">
+        <Button type="submit" disabled={pending} className="rounded-full">
+          <Plus className="mr-2 h-4 w-4" /> {pending ? "Adding…" : "Add service"}
+        </Button>
+      </div>
+    </form>
   );
 }
