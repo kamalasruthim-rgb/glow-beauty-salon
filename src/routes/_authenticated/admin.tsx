@@ -1,10 +1,15 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, LogOut, MessageSquare, Scissors } from "lucide-react";
+import { CalendarDays, LogOut, MessageSquare, Plus, Scissors } from "lucide-react";
 import { toast } from "sonner";
+import { useState } from "react";
+import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, useIsAdmin } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   component: Admin,
@@ -45,6 +50,18 @@ function Admin() {
   const togglePublish = useMutation({
     mutationFn: async ({ id, on }: { id: string; on: boolean }) => { const { error } = await supabase.from("reviews").update({ is_published: on }).eq("id", id); if (error) throw error; },
     onSuccess: () => { toast.success("Updated"); qc.invalidateQueries({ queryKey: ["admin-reviews"] }); },
+  });
+
+  const createService = useMutation({
+    mutationFn: async (input: {
+      service_name: string; category: string; description: string;
+      price: number; duration_minutes: number; image_url: string | null;
+    }) => {
+      const { error } = await supabase.from("services").insert(input);
+      if (error) throw error;
+    },
+    onSuccess: () => { toast.success("Service created"); qc.invalidateQueries({ queryKey: ["admin-services"] }); },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const signOut = async () => { await supabase.auth.signOut(); nav({ to: "/auth" }); };
@@ -106,6 +123,7 @@ function Admin() {
       </Section>
 
       <Section title="Services">
+        <NewServiceForm onSubmit={(v) => createService.mutate(v)} pending={createService.isPending} />
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {(services ?? []).map((s) => (
             <div key={s.id} className="rounded-2xl border border-border bg-card p-4">
