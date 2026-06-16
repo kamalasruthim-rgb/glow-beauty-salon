@@ -175,3 +175,84 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     </section>
   );
 }
+
+const serviceSchema = z.object({
+  service_name: z.string().trim().min(2).max(100),
+  category: z.string().trim().min(2).max(50),
+  description: z.string().trim().min(5).max(500),
+  price: z.number().min(0).max(10000),
+  duration_minutes: z.number().int().min(5).max(600),
+  image_url: z.string().trim().url().max(500).optional().or(z.literal("")),
+});
+
+type ServiceInput = {
+  service_name: string; category: string; description: string;
+  price: number; duration_minutes: number; image_url: string | null;
+};
+
+function NewServiceForm({ onSubmit, pending }: { onSubmit: (v: ServiceInput) => void; pending: boolean }) {
+  const [form, setForm] = useState({
+    service_name: "", category: "", description: "",
+    price: "", duration_minutes: "", image_url: "",
+  });
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = serviceSchema.safeParse({
+      service_name: form.service_name,
+      category: form.category,
+      description: form.description,
+      price: Number(form.price),
+      duration_minutes: Number(form.duration_minutes),
+      image_url: form.image_url,
+    });
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? "Invalid input");
+      return;
+    }
+    onSubmit({
+      ...parsed.data,
+      image_url: parsed.data.image_url ? parsed.data.image_url : null,
+    });
+    setForm({ service_name: "", category: "", description: "", price: "", duration_minutes: "", image_url: "" });
+  };
+
+  return (
+    <form onSubmit={submit} className="mb-6 rounded-2xl border border-border bg-card p-5">
+      <h3 className="font-display text-lg">Add new service</h3>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div>
+          <Label htmlFor="svc-name">Service name</Label>
+          <Input id="svc-name" value={form.service_name} onChange={set("service_name")} placeholder="Signature Facial" required />
+        </div>
+        <div>
+          <Label htmlFor="svc-cat">Category</Label>
+          <Input id="svc-cat" value={form.category} onChange={set("category")} placeholder="Facial" required />
+        </div>
+        <div>
+          <Label htmlFor="svc-price">Price ($)</Label>
+          <Input id="svc-price" type="number" min="0" step="1" value={form.price} onChange={set("price")} required />
+        </div>
+        <div>
+          <Label htmlFor="svc-dur">Duration (minutes)</Label>
+          <Input id="svc-dur" type="number" min="5" step="5" value={form.duration_minutes} onChange={set("duration_minutes")} required />
+        </div>
+        <div className="sm:col-span-2">
+          <Label htmlFor="svc-img">Image URL (optional)</Label>
+          <Input id="svc-img" type="url" value={form.image_url} onChange={set("image_url")} placeholder="https://…" />
+        </div>
+        <div className="sm:col-span-2">
+          <Label htmlFor="svc-desc">Description</Label>
+          <Textarea id="svc-desc" value={form.description} onChange={set("description")} rows={3} required />
+        </div>
+      </div>
+      <div className="mt-4 flex justify-end">
+        <Button type="submit" disabled={pending} className="rounded-full">
+          <Plus className="mr-2 h-4 w-4" /> {pending ? "Adding…" : "Add service"}
+        </Button>
+      </div>
+    </form>
+  );
+}
