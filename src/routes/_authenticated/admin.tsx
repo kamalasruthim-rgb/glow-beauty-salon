@@ -182,8 +182,10 @@ const serviceSchema = z.object({
   description: z.string().trim().min(5).max(500),
   price: z.number().min(0).max(10000),
   duration_minutes: z.number().int().min(5).max(600),
-  image_url: z.string().trim().url().max(500).optional().or(z.literal("")),
 });
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 type ServiceInput = {
   service_name: string; category: string; description: string;
@@ -193,12 +195,32 @@ type ServiceInput = {
 function NewServiceForm({ onSubmit, pending }: { onSubmit: (v: ServiceInput) => void; pending: boolean }) {
   const [form, setForm] = useState({
     service_name: "", category: "", description: "",
-    price: "", duration_minutes: "", image_url: "",
+    price: "", duration_minutes: "",
   });
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
-  const submit = (e: React.FormEvent) => {
+  const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] ?? null;
+    if (!f) { setFile(null); setPreview(null); return; }
+    if (!ALLOWED_IMAGE_TYPES.includes(f.type)) {
+      toast.error("Image must be JPG, PNG, WEBP, or GIF");
+      e.target.value = "";
+      return;
+    }
+    if (f.size > MAX_IMAGE_BYTES) {
+      toast.error("Image must be under 5 MB");
+      e.target.value = "";
+      return;
+    }
+    setFile(f);
+    setPreview(URL.createObjectURL(f));
+  };
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const parsed = serviceSchema.safeParse({
       service_name: form.service_name,
@@ -206,17 +228,42 @@ function NewServiceForm({ onSubmit, pending }: { onSubmit: (v: ServiceInput) => 
       description: form.description,
       price: Number(form.price),
       duration_minutes: Number(form.duration_minutes),
-      image_url: form.image_url,
     });
     if (!parsed.success) {
       toast.error(parsed.error.issues[0]?.message ?? "Invalid input");
       return;
     }
-    onSubmit({
-      ...parsed.data,
-      image_url: parsed.data.image_url ? parsed.data.image_url : null,
-    });
-    setForm({ service_name: "", category: "", description: "", price: "", duration_minutes: "", image_url: "" });
+
+    let image_url: string | null = null;
+    if (file) {
+      try {
+        setUploading(true);
+        const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+        const path = `${crypto.randomUUID()}.${ext}`;
+        const { error: upErr } = await supabase.storage
+          .from("service-images")
+          .upload(path, file, { contentType: file.type, upsert: false });
+        if (upErr) throw upErr;
+        // Bucket is private; mint a long-lived signed URL (10 years).
+        const { data: signed, error: signErr } = await supabase.storage
+          .from("service-images")
+          .createSignedUrl(path, 60 * 60 * 24 * 365 * 10);
+        if (signErr || !signed) throw signErr ?? new Error("Failed to sign URL");
+        image_url = signed.signedUrl;
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Image upload failed");
+        setUploading(false);
+        return;
+      } finally {
+        setUploading(false);
+      }
+    }
+
+    onSubmit({ ...parsed.data, image_url });
+    setForm({ service_name: "", category: "", description: "", price: "", duration_minutes: "" });
+    setFile(null);
+    if (preview) URL.revokeObjectURL(preview);
+    setPreview(null);
   };
 
   return (
@@ -240,8 +287,16 @@ function NewServiceForm({ onSubmit, pending }: { onSubmit: (v: ServiceInput) => 
           <Input id="svc-dur" type="number" min="5" step="5" value={form.duration_minutes} onChange={set("duration_minutes")} required />
         </div>
         <div className="sm:col-span-2">
-          <Label htmlFor="svc-img">Image URL (optional)</Label>
-          <Input id="svc-img" type="url" value={form.image_url} onChange={set("image_url")} placeholder="https://…" />
+          <Label htmlFor="svc-img">Service image (optional, max 5 MB)</Label>
+          <Input
+            id="svc-img"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            onChange={onPickFile}
+          />
+          {preview && (
+            <img src={preview} alt="Preview" className="mt-3 h-32 w-32 rounded-xl object-cover" />
+          )}
         </div>
         <div className="sm:col-span-2">
           <Label htmlFor="svc-desc">Description</Label>
@@ -249,8 +304,9 @@ function NewServiceForm({ onSubmit, pending }: { onSubmit: (v: ServiceInput) => 
         </div>
       </div>
       <div className="mt-4 flex justify-end">
-        <Button type="submit" disabled={pending} className="rounded-full">
-          <Plus className="mr-2 h-4 w-4" /> {pending ? "Adding…" : "Add service"}
+        <Button type="submit" disabled={pending || uploading} className="rounded-full">
+          <Plus className="mr-2 h-4 w-4" />
+          {uploading ? "Uploading…" : pending ? "Adding…" : "Add service"}
         </Button>
       </div>
     </form>
