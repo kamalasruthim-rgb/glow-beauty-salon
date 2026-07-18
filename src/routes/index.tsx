@@ -15,8 +15,8 @@ export const Route = createFileRoute("/")({
     meta: [
       { title: "Glow Beauty Salon — Enhance Your Natural Beauty" },
       { name: "description", content: "Professional beauty services for every occasion. Book hair, makeup, facial, nail & spa appointments at Glow." },
-      { property: "og:title", content: "Glow Beauty Salon" },
-      { property: "og:description", content: "Professional beauty services for every occasion." },
+      { property: "og:title", content: "Glow Beauty Salon — Enhance Your Natural Beauty" },
+      { property: "og:description", content: "Professional beauty services for every occasion. Book hair, makeup, facial, nail & spa appointments at Glow." },
     ],
   }),
   component: Index,
