@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -10,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { submitAppointment } from "@/lib/public-submissions.functions";
 
 export const Route = createFileRoute("/booking")({
   head: () => ({
@@ -35,6 +37,7 @@ const schema = z.object({
 type Form = z.infer<typeof schema>;
 
 function Booking() {
+  const submitAppointmentFn = useServerFn(submitAppointment);
   const { data: services } = useQuery({
     queryKey: ["services"],
     queryFn: async () => (await supabase.from("services").select("id,service_name,category").eq("is_active", true).order("service_name")).data ?? [],
@@ -43,18 +46,7 @@ function Booking() {
   const form = useForm<Form>({ resolver: zodResolver(schema) });
 
   const mut = useMutation({
-    mutationFn: async (v: Form) => {
-      const { error } = await supabase.from("appointments").insert({
-        customer_name: v.customer_name,
-        phone: v.phone,
-        email: v.email,
-        service_id: v.service_id,
-        booking_date: v.booking_date,
-        booking_time: v.booking_time,
-        notes: v.notes ?? null,
-      });
-      if (error) throw error;
-    },
+    mutationFn: async (v: Form) => submitAppointmentFn({ data: v }),
     onSuccess: () => {
       toast.success("Appointment requested! We'll confirm shortly.");
       form.reset();

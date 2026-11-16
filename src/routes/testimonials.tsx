@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -11,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { submitReview } from "@/lib/public-submissions.functions";
 
 export const Route = createFileRoute("/testimonials")({
   head: () => ({
@@ -45,6 +47,7 @@ function Stars({ value, onChange }: { value: number; onChange?: (n: number) => v
 
 function Testimonials() {
   const qc = useQueryClient();
+  const submitReviewFn = useServerFn(submitReview);
   const { data: reviews } = useQuery({
     queryKey: ["reviews"],
     queryFn: async () => (await supabase.from("reviews").select("*").eq("is_published", true).order("created_at", { ascending: false })).data ?? [],
@@ -64,10 +67,7 @@ function Testimonials() {
   const form = useForm<Form>({ resolver: zodResolver(schema), defaultValues: { rating: 5 } });
 
   const mut = useMutation({
-    mutationFn: async (v: Form) => {
-      const { error } = await supabase.from("reviews").insert({ customer_name: v.customer_name, rating: v.rating, review_text: v.review_text });
-      if (error) throw error;
-    },
+    mutationFn: async (v: Form) => submitReviewFn({ data: v }),
     onSuccess: () => { toast.success("Thank you for your review!"); form.reset({ rating: 5 }); setRating(5); qc.invalidateQueries({ queryKey: ["reviews"] }); },
     onError: (e: Error) => toast.error(e.message),
   });

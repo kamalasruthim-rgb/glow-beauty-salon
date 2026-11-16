@@ -1,0 +1,1 @@
+- Handle public booking and review writes through validated TanStack server functions; this keeps anonymous forms working without unrestricted table inserts.
